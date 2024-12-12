@@ -3,6 +3,7 @@ package com.example.myproject.Service;
 import com.example.myproject.Model.Result;
 import com.example.myproject.Model.User;
 import com.example.myproject.Repository.UserRepository;
+import com.example.myproject.Util.JwtUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -12,13 +13,18 @@ public class UserServiceImpl implements UserService {
     @Autowired
     private UserRepository userRepository;
 
+    @Autowired
+    private JwtUtil jwtUtil;
+
     private BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
+    @Override
     public User findUser(String username) {
         User user = userRepository.findUser(username);
         return user;
     }
 
+    @Override
     public Result register(String username, String password) {
         System.out.println(password);
         String encodedPassword = passwordEncoder.encode(password);
@@ -27,5 +33,16 @@ public class UserServiceImpl implements UserService {
         user.setPassword(encodedPassword);
         userRepository.addUser(user);
         return Result.success();
+    }
+
+    @Override
+    public Result login(String username, String password) {
+        User user = userRepository.findUser(username);
+        if (user != null && passwordEncoder.matches(password, user.getPassword())) {
+            String token = jwtUtil.generateToken(user.getUsername(),user.getAvatar());
+            return Result.success(token);
+        } else {
+            return Result.failure("用户名或密码错误");
+        }
     }
 }

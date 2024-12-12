@@ -22,8 +22,16 @@ public class UserController {
         if (userService.findUser(user.getUsername()) != null) {
             return Result.failure("用户名已存在");
         } else {
-            userService.register(user.getUsername(), user.getPassword());
-            return Result.success();
+            return userService.register(user.getUsername(), user.getPassword());
+        }
+    }
+
+    @PostMapping("/login")
+    public Result login(@RequestBody User user) {
+        if (userService.findUser(user.getUsername()) == null) {
+            return Result.failure("用户名不存在");
+        } else {
+            return userService.login(user.getUsername(), user.getPassword());
         }
     }
 
