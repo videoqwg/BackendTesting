@@ -20,6 +20,7 @@ public class UserServiceImpl implements UserService {
     }
 
     public Result register(String username, String password) {
+        System.out.println(password);
         String encodedPassword = passwordEncoder.encode(password);
         User user = new User();
         user.setUsername(username);
