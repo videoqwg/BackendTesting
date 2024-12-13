@@ -4,9 +4,13 @@ import com.example.myproject.Model.Result;
 import com.example.myproject.Model.User;
 import com.example.myproject.Repository.UserRepository;
 import com.example.myproject.Util.JwtUtil;
+import io.jsonwebtoken.Claims;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
+
+import java.util.HashMap;
+import java.util.Map;
 
 @Service
 public class UserServiceImpl implements UserService {
@@ -40,9 +44,32 @@ public class UserServiceImpl implements UserService {
         User user = userRepository.findUser(username);
         if (user != null && passwordEncoder.matches(password, user.getPassword())) {
             String token = jwtUtil.generateToken(user.getUsername(),user.getAvatar());
-            return Result.success(token);
+            Map<String, Object> data = new HashMap<>();
+            data.put("token", token);
+            return Result.success(data);
         } else {
             return Result.failure("用户名或密码错误");
         }
     }
+
+    @Override
+    public Result info(String token) {
+        Claims claims = jwtUtil.validateToken(token);
+        Map<String, Object> info = new HashMap<>();
+        String username = claims.get("username", String.class);
+        User user = findUser(username);
+        if (user != null) {
+            info.put("username", user.getUsername());
+            info.put("avatar", user.getAvatar());
+            return Result.success(info);
+        } else {
+            return Result.failure("用户不存在");
+        }
+    }
+
+    @Override
+    public Result logout(String token) {
+        return Result.success();
+    }
+
 }
