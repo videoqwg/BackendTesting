@@ -2,19 +2,21 @@ package com.example.myproject.Controller;
 
 import com.example.myproject.Model.Result;
 import com.example.myproject.Model.User;
+import io.jsonwebtoken.Claims;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import com.example.myproject.Service.UserService;
+import com.example.myproject.Util.JwtUtil;
 
 @RestController
-@RequestMapping("/user")
+@RequestMapping("/api/user")
 // 实现用户登录及用户注册功能
 public class UserController {
     @Autowired
     private UserService userService;
+
+    @Autowired
+    private JwtUtil jwtUtil;
 
     @PostMapping("/register")
     public Result register(@RequestBody User user) {
@@ -35,5 +37,14 @@ public class UserController {
         }
     }
 
+    @GetMapping("/info")
+    public Result info(@RequestParam("token") String token) {
+        return userService.info(token);
+    }
+
+    @PostMapping("/logout")
+    public Result logout(@RequestHeader("X-Token") String token) {
+        return userService.logout(token);
+    }
 
 }
