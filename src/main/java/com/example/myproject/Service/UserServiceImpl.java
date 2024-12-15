@@ -68,7 +68,7 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public Result logout(String token) {
+    public Result logout() {
         return Result.success();
     }
 

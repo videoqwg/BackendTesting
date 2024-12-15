@@ -8,5 +8,5 @@ public interface UserService {
     Result register(String username, String password);
     Result login(String username, String password);
     Result info(String token);
-    Result logout(String token);
+    Result logout();
 }
