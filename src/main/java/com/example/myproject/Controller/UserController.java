@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.*;
 import com.example.myproject.Service.UserService;
 import com.example.myproject.Util.JwtUtil;
 
+
 @RestController
 @RequestMapping("/api/user")
 // 实现用户登录及用户注册功能
@@ -43,8 +44,13 @@ public class UserController {
     }
 
     @PostMapping("/logout")
-    public Result logout(@RequestHeader("X-Token") String token) {
-        return userService.logout(token);
+    public Result logout() {
+        return userService.logout();
+    }
+
+    @PostMapping("/test")
+    public String test() {
+        return "test";
     }
 
 }
