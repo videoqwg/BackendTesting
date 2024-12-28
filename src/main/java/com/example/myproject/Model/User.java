@@ -8,6 +8,13 @@ import java.time.LocalDateTime;
 public class User {
     private Integer userid;
     private String username;
+    private String password;
+    private String email;
+    private String phone;
+    private LocalDateTime createTime;
+    private LocalDateTime updateTime;
+    private String avatar;
+    private String role;
 
     public Integer getUserid() {
         return userid;
@@ -73,10 +80,11 @@ public class User {
         this.avatar = avatar;
     }
 
-    private String password;
-    private String email;
-    private String phone;
-    private LocalDateTime createTime;
-    private LocalDateTime updateTime;
-    private String avatar;
+    public String getRole() {
+        return role;
+    }
+
+    public void setRole(String role) {
+        this.role = role;
+    }
 }
