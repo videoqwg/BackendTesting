@@ -1,5 +1,7 @@
 package com.example.myproject.Util;
 
+import com.example.myproject.Model.User;
+import com.example.myproject.Service.UserService;
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -12,6 +14,9 @@ public class JwtInterceptor implements HandlerInterceptor {
 
     @Autowired
     private JwtUtil jwtUtil;
+
+    @Autowired
+    private UserService userService;
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
@@ -30,7 +35,9 @@ public class JwtInterceptor implements HandlerInterceptor {
         try {
             Claims claims = jwtUtil.validateToken(token);  // 验证并解析 JWT
             // 将用户信息存储在请求属性中，供后续使用
-            request.setAttribute("claims", claims);
+            String username = claims.get("username", String.class);
+            User user = userService.findUser(username);
+            request.setAttribute("user", user);
             return true;
         } catch (Exception e) {
             response.setCharacterEncoding("UTF-8");
