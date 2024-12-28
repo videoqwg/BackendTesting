@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Component
@@ -20,10 +21,11 @@ public class JwtUtil {
         this.jwtConfig = jwtConfig;
     }
 
-    public  String generateToken(String username, String avatar) {
+    public  String generateToken(String username, String avatar, List<String> roles) {
         Map<String, Object> claims = new HashMap<>();
         claims.put("username", username);
         claims.put("avatar", avatar);
+        claims.put("roles", roles);
 
         return Jwts.builder()
                 .setClaims(claims) // 设置负载
