@@ -9,7 +9,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -43,7 +45,9 @@ public class UserServiceImpl implements UserService {
     public Result login(String username, String password) {
         User user = userRepository.findUser(username);
         if (user != null && passwordEncoder.matches(password, user.getPassword())) {
-            String token = jwtUtil.generateToken(user.getUsername(),user.getAvatar());
+            List<String> roles = new ArrayList<>();
+            roles.add(user.getRole());
+            String token = jwtUtil.generateToken(user.getUsername(),user.getAvatar(),roles);
             Map<String, Object> data = new HashMap<>();
             data.put("token", token);
             return Result.success(data);
@@ -58,9 +62,12 @@ public class UserServiceImpl implements UserService {
         Map<String, Object> info = new HashMap<>();
         String username = claims.get("username", String.class);
         User user = findUser(username);
+        List<String> roles = new ArrayList<>();
+        roles.add(user.getRole());
         if (user != null) {
             info.put("username", user.getUsername());
             info.put("avatar", user.getAvatar());
+            info.put("roles", roles);
             return Result.success(info);
         } else {
             return Result.failure("用户不存在");
@@ -72,4 +79,10 @@ public class UserServiceImpl implements UserService {
         return Result.success();
     }
 
+    @Override
+    public Result getRoles(User user) {
+        List<String> roles = new ArrayList<>();
+        roles.add(user.getRole());
+        return Result.success(roles);
+    }
 }

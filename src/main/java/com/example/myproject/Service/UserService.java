@@ -9,4 +9,5 @@ public interface UserService {
     Result login(String username, String password);
     Result info(String token);
     Result logout();
+    Result getRoles(User user);
 }
