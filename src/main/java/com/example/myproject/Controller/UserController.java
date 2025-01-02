@@ -2,11 +2,20 @@ package com.example.myproject.Controller;
 
 import com.example.myproject.Model.Result;
 import com.example.myproject.Model.User;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.Resource;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import com.example.myproject.Service.UserService;
 import com.example.myproject.Util.JwtUtil;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.multipart.MultipartHttpServletRequest;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.io.File;
 
 @RestController
 @RequestMapping("/api/user")
@@ -15,23 +24,22 @@ public class UserController {
     @Autowired
     private UserService userService;
 
-    @Autowired
-    private JwtUtil jwtUtil;
 
+    // 这里的username其实是id，不是真正的用户名
     @PostMapping("/register")
     public Result register(@RequestBody User user) {
         //先查询用户是否存在，如果存在则返回错误信息，不存在则注册
         if (userService.findUser(user.getUsername()) != null) {
-            return Result.failure("用户名已存在");
+            return Result.failure("用户已存在");
         } else {
             return userService.register(user.getUsername(), user.getPassword());
         }
     }
-
+    // 这里的username其实是id，不是真正的用户名
     @PostMapping("/login")
     public Result login(@RequestBody User user) {
         if (userService.findUser(user.getUsername()) == null) {
-            return Result.failure("用户名不存在");
+            return Result.failure("用户不存在");
         } else {
             return userService.login(user.getUsername(), user.getPassword());
         }
@@ -56,4 +64,41 @@ public class UserController {
     public Result getRoles(@RequestAttribute("user") User user) {
         return userService.getRoles(user);
     }
+
+
+    @PostMapping(value = "/uploadAvatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public Result uploadAvatar(HttpServletRequest request, @RequestAttribute("user") User user) {
+        // 将请求转换为 MultipartHttpServletRequest
+        MultipartHttpServletRequest multiRequest = (MultipartHttpServletRequest) request;
+
+        // 获取所有字段名和对应的文件
+        Map<String, MultipartFile> fileMap = multiRequest.getFileMap();
+        // 校验文件数量
+        if (fileMap.isEmpty()) {
+            return Result.failure("文件为空");
+        } else if (fileMap.size() > 1) {
+            return Result.failure("只能上传一个文件");
+        }
+        // 获取唯一的文件
+        Map.Entry<String, MultipartFile> entry = fileMap.entrySet().iterator().next();
+        String userId = user.getUserid();
+        MultipartFile avatar = entry.getValue();
+        return userService.updateAvatar(userId, avatar);
+    }
+
+    @GetMapping("/getAvatar/{filename}")
+    public ResponseEntity<Resource> getAvatar(@PathVariable String filename) {
+        return userService.getAvatar(filename);
+    }
+
+    @PostMapping("/updateUserData")
+    public Result updateUserData(@RequestBody Map<String, String> userForm, @RequestAttribute("user") User user) {
+        return userService.updateUserData(userForm, user);
+    }
+    @PostMapping("/updateAccountData")
+    public Result updateAccountData(@RequestBody Map<String, String> userForm, @RequestAttribute("user") User user) {
+        return userService.updateAccountData(userForm, user);
+    }
+
+
 }
