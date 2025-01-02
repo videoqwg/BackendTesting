@@ -4,4 +4,7 @@ spring:
     username: root
     password: 123
     driver-class-name: com.mysql.cj.jdbc.Driver
+  web:
+    resources:
+      static-locations: file:D:/Desktop/vue/vue-admin-template-master/src/assets
 
