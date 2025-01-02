@@ -35,8 +35,8 @@ public class JwtInterceptor implements HandlerInterceptor {
         try {
             Claims claims = jwtUtil.validateToken(token);  // 验证并解析 JWT
             // 将用户信息存储在请求属性中，供后续使用
-            String username = claims.get("username", String.class);
-            User user = userService.findUser(username);
+            String userid = claims.get("userid", String.class);
+            User user = userService.findUser(userid);
             request.setAttribute("user", user);
             return true;
         } catch (Exception e) {
