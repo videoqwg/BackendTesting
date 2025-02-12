@@ -1,16 +1,17 @@
-package com.example.myproject.Service;
+package com.example.myproject.Service.Impl;
 
-import com.example.myproject.Model.Friends;
-import com.example.myproject.Model.Groups;
-import com.example.myproject.Model.Result;
-import com.example.myproject.Model.User;
+import com.example.myproject.Model.*;
 import com.example.myproject.Repository.FriendsRepository;
 import com.example.myproject.Repository.GroupsRepository;
 import com.example.myproject.Repository.UserRepository;
+import com.example.myproject.Service.UserService;
 import com.example.myproject.Util.JwtUtil;
+import com.example.myproject.Manager.DynamicListenerManager;
 import io.jsonwebtoken.Claims;
 
+import org.springframework.amqp.core.*;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpHeaders;
@@ -20,11 +21,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
+import java.io.IOException;
 import java.net.MalformedURLException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.time.LocalDateTime;
+import java.nio.file.StandardCopyOption;
 import java.util.*;
+
+
 
 @Service
 public class UserServiceImpl implements UserService {
@@ -38,7 +43,16 @@ public class UserServiceImpl implements UserService {
     private GroupsRepository groupsRepository;
 
     @Autowired
-    private SequenceGeneratorService sequenceGeneratorService;
+    private AmqpAdmin rabbitAdmin; // 即 RabbitAdmin
+
+    @Autowired
+    private TopicExchange instructionExchange;
+
+    @Autowired
+    private TopicExchange groupExchange;
+
+    @Autowired
+    private DynamicListenerManager dynamicListenerManager;
 
     @Autowired
     private JwtUtil jwtUtil;
@@ -55,40 +69,94 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public Result register(String username, String password) {
+        String avatar = "/api/user/getAvatar/" + username + ".png";
         String encodedPassword = passwordEncoder.encode(password);
         Friends friends = new Friends(username);
         User user = new User();
         user.setUsername(username);
         user.setPassword(encodedPassword);
+        user.setAvatar(avatar);
+        createDefaultAvatar(username);
         userRepository.addUser(user);
         friendsRepository.save(friends);
         return Result.success();
     }
 
+    private void createDefaultAvatar(String userid)  {
+        String sourcePath = UPLOAD_DIRECTORY + "/default.png";
+        String targetPath = UPLOAD_DIRECTORY + "/" + userid + ".png";
+        try {
+            Files.copy(Paths.get(sourcePath), Paths.get(targetPath), StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     @Override
     public Result login(String userid, String password) {
         User user = userRepository.findUser(userid);
+        // 1. 查数据库中 userId 所在的群列表
         if (user != null && passwordEncoder.matches(password, user.getPassword())) {
             List<String> roles = new ArrayList<>();
             roles.add(user.getRole());
             String token = jwtUtil.generateToken(user.getUserid(), user.getUsername(), user.getAvatar(), roles);
             Map<String, Object> data = new HashMap<>();
             data.put("token", token);
+
+
+            // 动态声明队列 & Binding
+            createUserQueueAndBinding(userid);
+
+            // 启动监听容器
+            dynamicListenerManager.startListenerForUser(userid);
+
+
             return Result.success(data);
         } else {
             return Result.failure("用户名或密码错误");
         }
     }
 
+    /**
+     * 为用户创建队列并绑定到 Exchange
+     */
+    private void createUserQueueAndBinding(String userId) {
+        // 这里采用动态绑定方便后续进行扩展
+
+        String queueName = UserService.getQueueNameByUserId(userId);
+        List<Groups> groups = groupsRepository.findByMembersUserId(userId);
+
+        // 声明队列(若已存在，不会重复创建)
+        org.springframework.amqp.core.Queue userQueue = new org.springframework.amqp.core.Queue(queueName, true, false, false);
+        rabbitAdmin.declareQueue(userQueue);
+
+        // 声明 Binding
+        String routingKey = "user." + userId;
+        Binding binding = BindingBuilder.bind(userQueue)
+                .to(instructionExchange)
+                .with(routingKey);
+
+        // 对每个群做一次声明绑定
+        for (Groups group : groups) {
+            String groupRK = "group." + group.getGroupId() + ".*";
+            rabbitAdmin.declareBinding(
+                    BindingBuilder.bind(new org.springframework.amqp.core.Queue(queueName, true))
+                            .to(groupExchange)
+                            .with(groupRK)
+            );
+        }
+
+        rabbitAdmin.declareBinding(binding);
+    }
+
     @Override
-    public Result info(String token) {
-        Claims claims = jwtUtil.validateToken(token);
+    public Result info(String userid) {
         Map<String, Object> info = new HashMap<>();
-        String username = claims.get("userid", String.class);
-        User user = findUser(username);
+        User user = findUser(userid);
         List<String> roles = new ArrayList<>();
         roles.add(user.getRole());
         if (user != null) {
+            info.put("userid", user.getUserid());
             info.put("username", user.getUsername());
             info.put("avatar", user.getAvatar());
             info.put("roles", roles);
@@ -102,7 +170,8 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public Result logout() {
+    public Result logout(String userid) {
+        dynamicListenerManager.stopListenerForUser(userid);
         return Result.success();
     }
 
@@ -196,247 +265,4 @@ public class UserServiceImpl implements UserService {
             }
         }
     }
-
-    /*
-    * 以下为好友相关操作
-
-     */
-
-    @Override
-    public boolean validateUser(String friendId) {
-        try {
-            User user = userRepository.findUser(friendId);
-            if (user == null) {
-                return false;
-            }
-            return true;
-        } catch (Exception e) {
-            e.printStackTrace();
-            return false;
-        }
-    }
-    @Override
-    public Result getFriends(String userId) {
-        try {
-            List<User> friends = new ArrayList<>();
-            List<Friends.Friend> friendList = friendsRepository.findByUserId(userId).getFriends();
-            for (Friends.Friend friend : friendList) {
-                User user = userRepository.findUser(friend.getFriendId());
-                friends.add(user);
-            }
-            return Result.success(friends);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return Result.failure("获取好友列表失败");
-        }
-    }
-
-    @Override
-    public Result addFriend(String userId, String friendId) {
-        try {
-            Friends friends = friendsRepository.findByUserId(userId);
-            if(!validateUser(friendId)){
-                return Result.failure("用户不存在");
-            }
-
-            for (Friends.Friend friend : friends.getFriends()) {
-                if (friend.getFriendId().equals(friendId)) {
-                    if (friend.getStatus().equals("pending")) {
-                        return Result.failure("已经发送过添加好友请求");
-                    } else if (friend.getStatus().equals("accepted")) {
-                        return Result.failure("已经添加该好友");
-                    }
-                }
-            }
-
-            Friends.Friend friend = new Friends.Friend();
-            friend.setFriendId(friendId);
-            friend.setStatus("pending");
-            friend.setCreatedAt(LocalDateTime.now());
-
-            friends.getFriends().add(friend);
-            friendsRepository.save(friends);
-            return Result.success();
-        } catch (Exception e) {
-            e.printStackTrace();
-            return Result.failure("添加好友失败");
-        }
-    }
-
-    // 更新好友状态
-    public Result updateFriendStatus(String userId, String friendId, String status) {
-        Friends Friends = friendsRepository.findByUserId(userId);
-        if(!validateUser(friendId)){
-            return Result.failure("用户不存在");
-        }
-        if (Friends != null) {
-            if(Objects.equals(status, "deny")){
-                return removeFriend(userId, friendId);
-            }else {
-                Friends.getFriends().stream()
-                        .filter(friend -> friend.getFriendId().equals(friendId))
-                        .findFirst()
-                        .ifPresent(friend -> friend.setStatus(status));
-                friendsRepository.save(Friends);
-                return Result.success();
-            }
-        }
-        return Result.failure("更新好友状态失败");
-    }
-
-    // 删除好友
-    public Result removeFriend(String userId, String friendId) {
-        Friends Friends = friendsRepository.findByUserId(userId);
-        if(!validateUser(friendId)){
-            return Result.failure("用户不存在");
-        }
-        if (Friends != null) {
-            Friends.getFriends().removeIf(friend -> friend.getFriendId().equals(friendId));
-            friendsRepository.save(Friends);
-            return Result.success();
-        }else {
-            return Result.failure("删除好友失败");
-        }
-    }
-
-
-    /*
-
-    * 以下为群组相关操作
-
-     */
-    public Result initGroups(String userId, String groupName) {
-        try {
-            Groups groups = new Groups();
-
-            groups.setGroupId(sequenceGeneratorService.getNextSequence("groupId"));
-            groups.setUserId(userId);
-            groups.setGroupName(groupName);
-            groups.setMembers(new ArrayList<>());
-            groups.setCreatedAt(LocalDateTime.now());
-
-            groups.setMembers(new ArrayList<>());
-            Groups.Member member = new Groups.Member();
-            member.setUserId(userId);
-            member.setRole("member");
-            member.setStatus("pending");
-            member.setJoinedAt(LocalDateTime.now());
-            groups.getMembers().add(member);
-
-            groupsRepository.save(groups);
-            return Result.success(groups);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return Result.failure("初始化群组失败");
-        }
-    }
-    
-    // 添加群组成员
-    public Result addMember(String groupId, String userId) {
-        Groups group = groupsRepository.findByGroupId(groupId);
-        if(!validateUser(userId)) {
-            return Result.failure("用户不存在");
-        }
-
-        Groups.Member member = new Groups.Member();
-        member.setUserId(userId);
-        member.setRole("member");
-        member.setStatus("pending");
-        member.setJoinedAt(LocalDateTime.now());
-
-        group.getMembers().add(member);
-        groupsRepository.save(group);
-
-        return Result.success();
-    }
-
-    // 删除群组成员
-    public Result removeMember(String groupId, String userId) {
-        Groups group = groupsRepository.findByGroupId(groupId);
-        if(!validateUser(userId)) {
-            return Result.failure("用户不存在");
-        }
-        if (group != null) {
-            group.getMembers().removeIf(member -> member.getUserId().equals(userId));
-            groupsRepository.save(group);
-            return Result.success();
-        }
-        return Result.failure("删除群组成员失败");
-    }
-
-    // 更新群成员状态
-    public Result updateMemberStatus(String groupId, String userId, String status) {
-        Groups group = groupsRepository.findByGroupId(groupId);
-        if(!validateUser(userId)) {
-            return Result.failure("用户不存在");
-        }
-        if (group != null) {
-            group.getMembers().stream()
-                    .filter(member -> member.getUserId().equals(userId))
-                    .findFirst()
-                    .ifPresent(member -> member.setStatus(status));
-            groupsRepository.save(group);
-            return Result.success();
-        }
-        return Result.failure("更新群组成员状态失败");
-    }
-
-    // 更新群组成员角色
-    public Result updateMemberRole(String groupId, String userId, String role) {
-        Groups group = groupsRepository.findByGroupId(groupId);
-        if(!validateUser(userId)) {
-            return Result.failure("用户不存在");
-        }
-        if (group != null) {
-            group.getMembers().stream()
-                    .filter(member -> member.getUserId().equals(userId))
-                    .findFirst()
-                    .ifPresent(member -> member.setRole(role));
-            groupsRepository.save(group);
-            return Result.success();
-        }
-        return Result.failure("更新群组成员角色失败");
-    }
-
-    // 查询群组成员
-    /*
-    public Result getMembers(String groupId) {
-        try {
-            List<User> members = new ArrayList<>();
-            List<Groups.Member> memberList = groupsRepository.findByGroupId(groupId).getMembers();
-            for (Groups.Member member : memberList) {
-                User user = userRepository.findUser(member.getUserId());
-                members.add(user);
-            }
-            return Result.success(members);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return Result.failure("获取群组成员失败");
-        }
-    }
-    */
-    
-    // 查询用户所在的群组
-    public Result getGroups(String userId) {
-        try {
-            List<Groups> groups = groupsRepository.findByMembersUserId(userId);
-            return Result.success(groups);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return Result.failure("获取群组列表失败");
-        }
-    }
-
-    public Result updateGroupName(String groupId, String groupName) {
-        try {
-            Groups group = groupsRepository.findByGroupId(groupId);
-            group.setGroupName(groupName);
-            groupsRepository.save(group);
-            return Result.success();
-        } catch (Exception e) {
-            e.printStackTrace();
-            return Result.failure("修改群组名称失败");
-        }
-    }
-
 }
