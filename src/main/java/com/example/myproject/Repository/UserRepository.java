@@ -4,6 +4,7 @@ import com.example.myproject.Model.User;
 import org.apache.ibatis.annotations.*;
 
 
+
 @Mapper
 public interface UserRepository {
     //根据用户名查找用户
@@ -30,4 +31,5 @@ public interface UserRepository {
 
     @Update("UPDATE user SET password = #{password} WHERE userid = #{userid}")
     void updateUserPassword(@Param("userid") String userid, @Param("password") String password);
+
 }
