@@ -1,7 +1,9 @@
 package com.example.myproject.Controller;
 
+import com.example.myproject.Model.MessageDTO;
 import com.example.myproject.Model.Result;
 import com.example.myproject.Model.User;
+import com.example.myproject.Service.MessageService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
@@ -9,13 +11,10 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import com.example.myproject.Service.UserService;
-import com.example.myproject.Util.JwtUtil;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.multipart.MultipartHttpServletRequest;
 
-import java.util.HashMap;
 import java.util.Map;
-import java.io.File;
 
 @RestController
 @RequestMapping("/api/user")
@@ -23,6 +22,9 @@ import java.io.File;
 public class UserController {
     @Autowired
     private UserService userService;
+
+    @Autowired
+    private MessageService messageService;
 
 
     // 这里的username其实是id，不是真正的用户名
@@ -46,18 +48,13 @@ public class UserController {
     }
 
     @GetMapping("/info")
-    public Result info(@RequestParam("token") String token) {
-        return userService.info(token);
+    public Result info(@RequestAttribute("user") User user) {
+        return userService.info(user.getUserid());
     }
 
     @PostMapping("/logout")
-    public Result logout() {
-        return userService.logout();
-    }
-
-    @PostMapping("/test")
-    public String test() {
-        return "test";
+    public Result logout(@RequestAttribute("user") User user) {
+        return userService.logout(user.getUserid());
     }
 
     @GetMapping("/getRoles")
@@ -100,5 +97,39 @@ public class UserController {
         return userService.updateAccountData(userForm, user);
     }
 
+    @PostMapping("/sendCmd")
+    public Result sendCommand(@RequestBody MessageDTO instruction) {
+        return messageService.sendMessage(instruction);
+    }
+
+    @PostMapping("/sendGroupCmd")
+    public Result sendGroupCommand(@RequestBody MessageDTO instruction) {
+        return messageService.sendGroupMessage(instruction);
+    }
+
+    @GetMapping("/loadMessages")
+    public Result loadMessages(@RequestAttribute("user") User user){
+        return Result.success(messageService.processMessages(user.getUserid()));
+    }
+
+    @PostMapping("/getFriendInfo")
+    public Result getFriendInfo(@RequestBody Map<String,String> friend){
+        return userService.info(friend.get("friendId"));
+    }
+
+    @PostMapping("/syncMessages")
+    public Result syncMessages(@RequestBody Map<String,String> timestamp, @RequestAttribute("user") User user){
+        return messageService.syncMessages(timestamp.get("timestamp"),user.getUserid(),"chat");
+    }
+
+    @PostMapping("/syncNotifications")
+    public Result syncNotifications(@RequestBody Map<String,String> timestamp, @RequestAttribute("user") User user){
+        return messageService.syncMessages(timestamp.get("timestamp"),user.getUserid(),"notification");
+    }
+
+    @GetMapping("/test")
+    public Result test() {
+        return Result.success();
+    }
 
 }
